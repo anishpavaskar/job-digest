@@ -51,3 +51,6 @@ python cli.py run                # run pipeline now
 
 ## Tech stack
 Python, Haiku (scoring), Playwright, JobSpy, SQLite, Gmail API, launchd
+
+## Dashboard
+https://job-digest-anish.vercel.app

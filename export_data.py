@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,7 @@ from logging_config import get_logger
 from tracker import get_stats, init_db, search_jobs
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+DASHBOARD_ROOT = PROJECT_ROOT / "dashboard"
 DASHBOARD_DATA = PROJECT_ROOT / "dashboard" / "data"
 JOBS_JSON = DASHBOARD_DATA / "jobs.json"
 EXPORT_PATH = Path("dashboard") / "data" / "jobs.json"
@@ -77,11 +79,43 @@ def git_push() -> None:
         log.info("Dashboard data saved locally but was not pushed")
 
 
+def deploy_dashboard() -> None:
+    """Trigger a fresh Vercel deployment for the dashboard project."""
+    if shutil.which("vercel") is None:
+        log.warning("Vercel CLI is not installed; skipping dashboard deploy")
+        return
+
+    project_link = DASHBOARD_ROOT / ".vercel" / "project.json"
+    if not project_link.exists():
+        log.warning("Dashboard is not linked to a Vercel project yet; skipping deploy")
+        return
+
+    try:
+        result = subprocess.run(
+            ["vercel", "--prod", "--yes"],
+            cwd=DASHBOARD_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=GIT_TIMEOUT_SECONDS,
+        )
+        lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        latest_line = next((line for line in reversed(lines) if "https://" in line), "vercel deploy complete")
+        log.info("Vercel deploy complete: %s", latest_line)
+    except subprocess.CalledProcessError as exc:
+        error_output = (exc.stderr or exc.stdout or str(exc)).strip()[:200]
+        log.warning("Vercel deploy failed: %s", error_output)
+    except subprocess.TimeoutExpired as exc:
+        message = (exc.stderr or exc.stdout or str(exc)).strip()[:200]
+        log.warning("Vercel deploy timed out: %s", message)
+
+
 def export_and_push() -> None:
-    """Export current dashboard data and push it when there is data to publish."""
+    """Export current dashboard data, push it, and refresh the Vercel dashboard."""
     count = export_jobs()
     if count > 0:
         git_push()
+        deploy_dashboard()
 
 
 if __name__ == "__main__":

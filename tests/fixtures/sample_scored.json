@@ -1,0 +1,112 @@
+[
+  {
+    "id": "greenhouse:anthropic:1001",
+    "title": "Backend Engineer, Kubernetes Platform",
+    "company": "Anthropic",
+    "location": "Remote",
+    "url": "https://example.com/jobs/perfect-match",
+    "description": "Build Python and Go backend services for AI/ML infrastructure. Own Kubernetes, Docker, Terraform, AWS, PostgreSQL, Redis, and FastAPI systems for a remote-first platform team.",
+    "source": "greenhouse",
+    "posted_at": "2026-01-15",
+    "score": 97,
+    "reasons": [
+      "Excellent backend and infra overlap",
+      "Strong AI infrastructure domain fit",
+      "Remote location matches preference"
+    ],
+    "title_match": 98,
+    "skills_match": 96,
+    "level_match": 88,
+    "domain_fit": 97,
+    "location_fit": 100,
+    "rationale": "Excellent backend and infra overlap | Strong AI infrastructure domain fit | Remote location matches preference"
+  },
+  {
+    "id": "yc:brex:2002",
+    "title": "Senior Infrastructure Engineer",
+    "company": "Brex",
+    "location": "San Francisco, CA",
+    "url": "https://example.com/jobs/good-match",
+    "description": "Design Go services and CI/CD infrastructure. Improve AWS, Terraform, Kubernetes, and observability for a growing fintech platform.",
+    "source": "yc",
+    "posted_at": "2026-01-14",
+    "score": 84,
+    "reasons": [
+      "Strong infrastructure stack overlap",
+      "Good fintech domain alignment",
+      "Slightly senior but still plausible"
+    ],
+    "title_match": 86,
+    "skills_match": 90,
+    "level_match": 72,
+    "domain_fit": 80,
+    "location_fit": 88,
+    "rationale": "Strong infrastructure stack overlap | Good fintech domain alignment | Slightly senior but still plausible"
+  },
+  {
+    "id": "prospect:pixellabs:3003",
+    "title": "Frontend Engineer",
+    "company": "Pixel Labs",
+    "location": "New York, NY",
+    "url": "https://example.com/jobs/mediocre-match",
+    "description": "Build React and design-system features for a consumer web app. Strong focus on CSS, accessibility, and frontend product polish.",
+    "source": "prospect",
+    "posted_at": "2026-01-13",
+    "score": 43,
+    "reasons": [
+      "Engineering title helps somewhat",
+      "Primary stack is frontend React",
+      "Limited infrastructure overlap"
+    ],
+    "title_match": 40,
+    "skills_match": 25,
+    "level_match": 55,
+    "domain_fit": 35,
+    "location_fit": 60,
+    "rationale": "Engineering title helps somewhat | Primary stack is frontend React | Limited infrastructure overlap"
+  },
+  {
+    "id": "linkedin:revenue-rocket:4004",
+    "title": "Account Executive, Sales",
+    "company": "Revenue Rocket",
+    "location": "Remote",
+    "url": "https://example.com/jobs/poor-match",
+    "description": "Own outbound pipeline, close deals, and grow business development across enterprise accounts.",
+    "source": "linkedin",
+    "posted_at": "2026-01-12",
+    "score": 7,
+    "reasons": [
+      "Non-engineering role",
+      "No relevant technical skill overlap",
+      "Remote location is the only fit"
+    ],
+    "title_match": 0,
+    "skills_match": 0,
+    "level_match": 10,
+    "domain_fit": 0,
+    "location_fit": 100,
+    "rationale": "Non-engineering role | No relevant technical skill overlap | Remote location is the only fit"
+  },
+  {
+    "id": "unified:unknown:5005",
+    "title": "Software Engineer",
+    "company": "",
+    "location": "",
+    "url": "https://example.com/jobs/edge-case",
+    "description": "",
+    "source": "unified",
+    "posted_at": "",
+    "score": 55,
+    "reasons": [
+      "Generic software role title matches partially",
+      "Missing description limits confidence",
+      "Unknown location and company reduce fit"
+    ],
+    "title_match": 60,
+    "skills_match": 40,
+    "level_match": 55,
+    "domain_fit": 45,
+    "location_fit": 20,
+    "rationale": "Generic software role title matches partially | Missing description limits confidence | Unknown location and company reduce fit"
+  }
+]

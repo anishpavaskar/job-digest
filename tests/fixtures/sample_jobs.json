@@ -1,0 +1,52 @@
+[
+  {
+    "id": "greenhouse:anthropic:1001",
+    "title": "Backend Engineer, Kubernetes Platform",
+    "company": "Anthropic",
+    "location": "Remote",
+    "url": "https://example.com/jobs/perfect-match",
+    "description": "Build Python and Go backend services for AI/ML infrastructure. Own Kubernetes, Docker, Terraform, AWS, PostgreSQL, Redis, and FastAPI systems for a remote-first platform team.",
+    "source": "greenhouse",
+    "posted_at": "2026-01-15"
+  },
+  {
+    "id": "yc:brex:2002",
+    "title": "Senior Infrastructure Engineer",
+    "company": "Brex",
+    "location": "San Francisco, CA",
+    "url": "https://example.com/jobs/good-match",
+    "description": "Design Go services and CI/CD infrastructure. Improve AWS, Terraform, Kubernetes, and observability for a growing fintech platform.",
+    "source": "yc",
+    "posted_at": "2026-01-14"
+  },
+  {
+    "id": "prospect:pixellabs:3003",
+    "title": "Frontend Engineer",
+    "company": "Pixel Labs",
+    "location": "New York, NY",
+    "url": "https://example.com/jobs/mediocre-match",
+    "description": "Build React and design-system features for a consumer web app. Strong focus on CSS, accessibility, and frontend product polish.",
+    "source": "prospect",
+    "posted_at": "2026-01-13"
+  },
+  {
+    "id": "linkedin:revenue-rocket:4004",
+    "title": "Account Executive, Sales",
+    "company": "Revenue Rocket",
+    "location": "Remote",
+    "url": "https://example.com/jobs/poor-match",
+    "description": "Own outbound pipeline, close deals, and grow business development across enterprise accounts.",
+    "source": "linkedin",
+    "posted_at": "2026-01-12"
+  },
+  {
+    "id": "unified:unknown:5005",
+    "title": "Software Engineer",
+    "company": "",
+    "location": "",
+    "url": "https://example.com/jobs/edge-case",
+    "description": "",
+    "source": "unified",
+    "posted_at": ""
+  }
+]

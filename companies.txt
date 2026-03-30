@@ -1,0 +1,32 @@
+# Greenhouse Company Slugs
+# Format: slug | display_name
+# Used by fetchers/greenhouse.py
+#
+# NOTE: The following use Lever/Ashby and are fetched via Unified.to:
+# notion, plaid, scale, linear, ramp, retool, mercury, cursor
+
+anthropic | Anthropic
+anduril | Anduril Industries
+brex | Brex
+figma | Figma
+stripe | Stripe
+vercel | Vercel
+rippling | Rippling
+chime | Chime
+databricks | Databricks
+openai | OpenAI
+cohere | Cohere
+mistral | Mistral AI
+modal | Modal
+replit | Replit
+watershed | Watershed
+hex | Hex
+dbt-labs | dbt Labs
+cloudflare | Cloudflare
+datadog | Datadog
+crowdstrike | CrowdStrike
+warp | Warp
+together-ai | Together AI
+perplexity | Perplexity AI
+groq | Groq
+harvey | Harvey

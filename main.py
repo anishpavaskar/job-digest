@@ -3,56 +3,64 @@
 from __future__ import annotations
 
 import asyncio
-from collections import Counter
 from datetime import datetime
+from pathlib import Path
 from typing import Any
+
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent / ".env")
 
 from config import GREENHOUSE_COMPANIES, MY_PROFILE
 from emailer import send_digest
-from fetchers import (
-    fetch_greenhouse_jobs,
-    fetch_linkedin_jobs,
-    fetch_prospect_jobs,
-    fetch_unified_jobs,
-    fetch_yc_jobs,
-)
+from export_data import export_and_push
+from fetchers.greenhouse import fetch_greenhouse_jobs
+from fetchers.jobspy_fetcher import fetch_jobspy_jobs
+from fetchers.linkedin_mcp_fetcher import fetch_linkedin_mcp_jobs
+from fetchers.playwright_fetcher import fetch_ashby_jobs, fetch_lever_jobs
+from fetchers.prospect import fetch_prospect
+from fetchers.yc import fetch_yc
+from logging_config import get_logger
 from renderer import OUTPUT_PATH, render_html
 from scorer import score_jobs
+from tracker import filter_new_jobs, init_db, update_scores
 
 Job = dict[str, Any]
 MAX_SCORING_JOBS = 100
 HEURISTIC_ROLE_TERMS = ("engineer", "engineering", "developer", "platform", "backend", "infrastructure", "sre", "devops")
+SOURCE_NAMES = ["greenhouse", "yc", "prospect", "jobspy", "linkedin_mcp", "lever", "ashby"]
+log = get_logger("main")
 
 
-def _log(message: str) -> None:
-    print(message)
-
-
-def _flatten_results(results: list[Any]) -> list[Job]:
-    jobs: list[Job] = []
-    for result in results:
-        if isinstance(result, Exception):
-            _log(f"Fetcher failed: {result}")
-            continue
-        jobs.extend(result)
-    return jobs
+def _export_dashboard() -> None:
+    try:
+        export_and_push()
+    except Exception as exc:
+        log.error("Dashboard export failed: %s", exc)
 
 
 def _deduplicate_jobs(jobs: list[Job]) -> list[Job]:
-    unique_jobs: dict[str, Job] = {}
+    unique_by_url: dict[str, Job] = {}
     for job in jobs:
         key = str(job.get("url") or job.get("id") or "").strip()
         if not key:
             continue
-        unique_jobs[key] = job
-    return list(unique_jobs.values())
+        unique_by_url[key] = job
 
-
-def _source_counts(jobs: list[Job]) -> str:
-    counts = Counter(job.get("source") or "unknown" for job in jobs)
-    if not counts:
-        return "none"
-    return ", ".join(f"{source}={counts[source]}" for source in sorted(counts))
+    title_company_seen: set[str] = set()
+    deduplicated: list[Job] = []
+    for job in unique_by_url.values():
+        title = str(job.get("title", "") or "").lower().strip()
+        company = str(job.get("company", "") or "").lower().strip()
+        key = f"{title}:{company}"
+        if not title and not company:
+            deduplicated.append(job)
+            continue
+        if key in title_company_seen:
+            continue
+        title_company_seen.add(key)
+        deduplicated.append(job)
+    return deduplicated
 
 
 def _shortlist_terms() -> set[str]:
@@ -101,40 +109,71 @@ def _shortlist_jobs(jobs: list[Job]) -> list[Job]:
 
 
 async def run_pipeline() -> list[Job]:
-    _log(f"Starting job digest pipeline — {datetime.now()}")
+    log.info("Starting job digest pipeline")
+    init_db()
 
     results = await asyncio.gather(
         fetch_greenhouse_jobs(GREENHOUSE_COMPANIES),
-        fetch_yc_jobs(),
-        fetch_prospect_jobs(),
-        fetch_linkedin_jobs(),
-        fetch_unified_jobs(),
+        fetch_yc(),
+        fetch_prospect(),
+        fetch_jobspy_jobs(),
+        fetch_linkedin_mcp_jobs(),
+        fetch_lever_jobs(),
+        fetch_ashby_jobs(),
         return_exceptions=True,
     )
 
-    fetched_jobs = _flatten_results(list(results))
-    deduped_jobs = _deduplicate_jobs(fetched_jobs)
+    all_jobs: list[Job] = []
+    for index, result in enumerate(results):
+        source = SOURCE_NAMES[index]
+        if isinstance(result, list):
+            log.info("%s: %s jobs", source, len(result))
+            all_jobs.extend(result)
+        else:
+            log.error("%s failed: %s", source, result)
 
-    _log(f"Total jobs fetched per source — {_source_counts(deduped_jobs)}")
-    scoring_candidates = _shortlist_jobs(deduped_jobs)
-    _log(f"Shortlisted jobs for scoring — {len(scoring_candidates)} of {len(deduped_jobs)}")
+    url_deduped_count = len(
+        {
+            str(job.get("url") or job.get("id") or "").strip()
+            for job in all_jobs
+            if str(job.get("url") or job.get("id") or "").strip()
+        }
+    )
+    deduped_jobs = _deduplicate_jobs(all_jobs)
+
+    log.info("Total fetched jobs: %s", len(all_jobs))
+    log.info("After URL dedup: %s jobs", url_deduped_count)
+    log.info("After title+company dedup: %s jobs", len(deduped_jobs))
+    new_jobs = filter_new_jobs(deduped_jobs)
+    seen_jobs = len(deduped_jobs) - len(new_jobs)
+    log.info("New jobs (not seen before): %s", len(new_jobs))
+
+    if not new_jobs:
+        log.info("No new jobs today - skipping score + email")
+        _export_dashboard()
+        return []
+
+    scoring_candidates = _shortlist_jobs(new_jobs)
+    log.info("Shortlisted new jobs for scoring: %s of %s", len(scoring_candidates), len(new_jobs))
 
     try:
         scored_jobs = await score_jobs(scoring_candidates, profile=MY_PROFILE)
     except Exception as exc:
-        _log(f"Scoring failed — {exc}")
+        log.error("Scoring failed: %s", exc)
         scored_jobs = []
-    _log(f"Total jobs after scoring filter — {len(scored_jobs)}")
+    update_scores(scored_jobs)
+    log.info("Total jobs after scoring filter: %s", len(scored_jobs))
 
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     render_html(scored_jobs, generated_at)
-    _log(f"Rendered HTML digest — {OUTPUT_PATH}")
+    log.info("Rendered HTML digest: %s", OUTPUT_PATH)
 
     try:
         send_digest(scored_jobs, str(OUTPUT_PATH))
     except Exception as exc:
-        _log(f"Email send failed — {exc}")
-    _log(f"Pipeline complete — {len(scored_jobs)} jobs in digest")
+        log.error("Email send failed: %s", exc)
+    _export_dashboard()
+    log.info("Pipeline complete: %s new jobs scored, %s already seen (skipped)", len(scored_jobs), seen_jobs)
 
     return scored_jobs
 

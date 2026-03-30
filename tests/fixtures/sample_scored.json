@@ -66,7 +66,7 @@
     "rationale": "Engineering title helps somewhat | Primary stack is frontend React | Limited infrastructure overlap"
   },
   {
-    "id": "linkedin:revenue-rocket:4004",
+    "id": "jobspy:linkedin:4004",
     "title": "Account Executive, Sales",
     "company": "Revenue Rocket",
     "location": "Remote",
@@ -88,13 +88,13 @@
     "rationale": "Non-engineering role | No relevant technical skill overlap | Remote location is the only fit"
   },
   {
-    "id": "unified:unknown:5005",
+    "id": "linkedin_mcp:5005",
     "title": "Software Engineer",
-    "company": "",
+    "company": "Unknown Company",
     "location": "",
     "url": "https://example.com/jobs/edge-case",
     "description": "",
-    "source": "unified",
+    "source": "linkedin_mcp",
     "posted_at": "",
     "score": 55,
     "reasons": [

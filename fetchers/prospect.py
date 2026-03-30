@@ -10,11 +10,14 @@ from urllib.parse import urljoin
 import httpx
 from bs4 import BeautifulSoup
 
+from logging_config import get_logger
+
 PROSPECT_EXPLORE_URL = "https://www.joinprospect.com/explore"
 PAGE_PARAM = "ef34f5f2_page"
 MAX_PAGES = 20
 DETAIL_CONCURRENCY = 10
-REQUEST_TIMEOUT = httpx.Timeout(20.0)
+REQUEST_TIMEOUT = httpx.Timeout(30.0)
+log = get_logger("prospect")
 
 
 def _clean_text(value: Any) -> str:
@@ -120,7 +123,7 @@ async def _fetch_company_entry(
             response = await client.get(entry["detail_url"])
         response.raise_for_status()
     except httpx.HTTPError as exc:
-        print(f"Prospect detail fetch failed for {entry['detail_url']}: {exc}")
+        log.warning("Detail fetch failed for %s: %s", entry["detail_url"], exc)
         return None
 
     soup = BeautifulSoup(response.text, "html.parser")
@@ -149,33 +152,47 @@ async def fetch_prospect_jobs() -> list[dict[str, Any]]:
     discovered: dict[str, dict[str, str]] = {}
     semaphore = asyncio.Semaphore(DETAIL_CONCURRENCY)
 
-    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, follow_redirects=True) as client:
-        for page in range(1, MAX_PAGES + 1):
-            page_url = PROSPECT_EXPLORE_URL if page == 1 else f"{PROSPECT_EXPLORE_URL}?{PAGE_PARAM}={page}"
-            response = await client.get(page_url)
-            if response.status_code != 200:
-                break
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, follow_redirects=True) as client:
+            for page in range(1, MAX_PAGES + 1):
+                page_url = PROSPECT_EXPLORE_URL if page == 1 else f"{PROSPECT_EXPLORE_URL}?{PAGE_PARAM}={page}"
+                try:
+                    response = await client.get(page_url)
+                except httpx.HTTPError as exc:
+                    log.warning("Explore page fetch failed for %s: %s", page_url, exc)
+                    return []
 
-            page_entries = _extract_company_links(response.text)
-            new_entries = [entry for entry in page_entries if entry["detail_url"] not in discovered]
-            if not new_entries:
-                break
+                if response.status_code != 200:
+                    log.warning("Explore page fetch failed for %s (%s)", page_url, response.status_code)
+                    break
 
-            for entry in new_entries:
-                discovered[entry["detail_url"]] = entry
+                page_entries = _extract_company_links(response.text)
+                new_entries = [entry for entry in page_entries if entry["detail_url"] not in discovered]
+                if not new_entries:
+                    break
 
-        results = await asyncio.gather(
-            *(_fetch_company_entry(client, semaphore, entry) for entry in discovered.values()),
-            return_exceptions=True,
-        )
+                for entry in new_entries:
+                    discovered[entry["detail_url"]] = entry
+
+            results = await asyncio.gather(
+                *(_fetch_company_entry(client, semaphore, entry) for entry in discovered.values()),
+                return_exceptions=True,
+            )
+    except Exception as exc:
+        log.warning("Prospect fetch failed: %s", exc)
+        return []
 
     jobs: list[dict[str, Any]] = []
     for result in results:
         if isinstance(result, Exception):
-            print(f"Prospect entry parse failed: {result}")
+            log.warning("Entry parse failed: %s", result)
             continue
         if result:
             jobs.append(result)
     if not jobs:
-        print("Prospect returned no actionable role/apply links; returning no jobs.")
+        log.info("Returning no jobs; no actionable role/apply links")
     return jobs
+
+
+async def fetch_prospect() -> list[dict[str, Any]]:
+    return await fetch_prospect_jobs()

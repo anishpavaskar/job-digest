@@ -37,7 +37,6 @@ GREENHOUSE_COMPANIES = [
     {"slug": "anthropic", "name": "Anthropic"},
     {"slug": "anduril", "name": "Anduril Industries"},
     {"slug": "brex", "name": "Brex"},
-    {"slug": "figma", "name": "Figma"},
     {"slug": "stripe", "name": "Stripe"},
     {"slug": "vercel", "name": "Vercel"},
     {"slug": "rippling", "name": "Rippling"},
@@ -47,18 +46,42 @@ GREENHOUSE_COMPANIES = [
     {"slug": "cohere", "name": "Cohere"},
     {"slug": "mistral", "name": "Mistral AI"},
     {"slug": "modal", "name": "Modal"},
-    {"slug": "replit", "name": "Replit"},
     {"slug": "watershed", "name": "Watershed"},
-    {"slug": "hex", "name": "Hex"},
-    {"slug": "dbt-labs", "name": "dbt Labs"},
-    {"slug": "cloudflare", "name": "Cloudflare"},
     {"slug": "datadog", "name": "Datadog"},
     {"slug": "crowdstrike", "name": "CrowdStrike"},
-    {"slug": "warp", "name": "Warp"},
     {"slug": "together-ai", "name": "Together AI"},
     {"slug": "perplexity", "name": "Perplexity AI"},
     {"slug": "groq", "name": "Groq"},
     {"slug": "harvey", "name": "Harvey"},
+]
+
+JOBSPY_SEARCHES = [
+    "backend engineer remote",
+    "platform engineer remote",
+    "infrastructure engineer remote",
+    "SRE site reliability engineer remote",
+    "ML infrastructure engineer remote",
+    "DevOps engineer remote",
+]
+
+LINKEDIN_MCP_SEARCHES = [
+    "backend engineer",
+    "platform engineer",
+    "infrastructure engineer",
+    "ML infrastructure",
+    "SRE devops remote",
+]
+
+LEVER_COMPANIES = [
+    "notion", "plaid", "scale", "figma",
+    "checkr", "benchling", "superhuman",
+    "cloudflare", "warpdev",
+]
+
+ASHBY_COMPANIES = [
+    "linear", "ramp", "retool", "mercury",
+    "cursor", "hex", "coda", "replit",
+    "loom", "dbtlabs",
 ]
 
 SCORING_WEIGHTS = {
@@ -72,10 +95,12 @@ SCORING_WEIGHTS = {
 TOP_N_EMAIL = 8
 MIN_SCORE = 55
 
+DB_PATH = os.path.expanduser(os.getenv("DB_PATH", "~/job-digest/tracker.db"))
+TZ = os.getenv("TZ", "America/Los_Angeles").strip()
+DIGEST_URL = os.getenv("DIGEST_URL", "").strip()
+VERCEL_URL = os.getenv("VERCEL_URL", "").strip()
+
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 GMAIL_CREDENTIALS_PATH = os.getenv("GMAIL_CREDENTIALS_PATH", "credentials.json").strip()
 GMAIL_FROM = os.getenv("GMAIL_FROM", "").strip()
 GMAIL_TO = os.getenv("GMAIL_TO", "").strip()
-UNIFIED_API_KEY = os.getenv("UNIFIED_API_KEY", "").strip()
-UNIFIED_LEVER_CONN_ID = os.getenv("UNIFIED_LEVER_CONN_ID", "").strip()
-UNIFIED_ASHBY_CONN_ID = os.getenv("UNIFIED_ASHBY_CONN_ID", "").strip()

@@ -1,6 +1,5 @@
 httpx
 anthropic
-apscheduler
 google-auth
 google-auth-oauthlib
 google-api-python-client
@@ -9,4 +8,6 @@ jinja2
 python-dotenv
 pytest
 pytest-asyncio
-Unified-python-sdk
+python-jobspy
+playwright
+mcp

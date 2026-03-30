@@ -1,95 +1,53 @@
 # job-digest
 
-Automated startup job digest that fetches jobs from multiple sources, scores them with Anthropic Claude Haiku, renders a terminal-style HTML report, and emails the top matches via Gmail.
+Twice-daily job digest — finds, scores, and emails top engineering
+roles from Greenhouse, YC, Prospect, Indeed, LinkedIn, Lever, and Ashby.
 
-## One-time setup
+## Setup
 
-1. Create and activate the virtual environment if needed:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
+### 1. Install dependencies
 pip install -r requirements.txt
-```
+playwright install chromium
 
-2. Create a `.env` file or copy from `.env.example`.
-
-3. Add your environment values:
-
-```env
-# --- AI / Scoring ---
-ANTHROPIC_API_KEY=
-
-# --- Gmail / Output ---
-GMAIL_CREDENTIALS_PATH=credentials.json
-GMAIL_FROM=
-GMAIL_TO=
-DIGEST_URL=
-TZ=America/Los_Angeles
-
-# --- Unified.to ---
-UNIFIED_API_KEY=
-UNIFIED_LEVER_CONN_ID=
-UNIFIED_ASHBY_CONN_ID=
-```
-
-4. Put your Google OAuth client file at the path referenced by `GMAIL_CREDENTIALS_PATH`.
-
-5. Run the one-time Gmail auth flow:
-
-```bash
+### 2. Gmail auth (one-time)
 python setup_gmail_auth.py
-```
 
-This creates `token.json` in the project root.
+### 3. LinkedIn MCP auth (one-time)
+uvx patchright install chromium
+uvx linkedin-scraper-mcp --login
 
-## Run locally
+### 4. Configure
+cp .env.example .env
+# Fill in ANTHROPIC_API_KEY, GMAIL_FROM, GMAIL_TO
 
-Run the full pipeline once:
-
-```bash
+### 5. Run manually
 python main.py
-```
 
-Run the twice-daily scheduler:
+### 6. Schedule (7am + 5pm daily)
+launchctl load ~/Library/LaunchAgents/com.anish.job-digest.plist
 
-```bash
-python scheduler.py
-```
+## CLI
 
-The HTML digest is written to `output/digest.html`.
+python cli.py stats              # funnel overview
+python cli.py list --status new  # new jobs
+python cli.py apply <url>        # mark applied
+python cli.py skip <url>         # not interested
+python cli.py search "anthropic" # search by company/title
+python cli.py run                # run pipeline now
 
-## Deploy to Railway
+## Sources
 
-1. Push this project to a Git repository.
-2. Create a new Railway project from the repo.
-3. Railway will use `railway.json` and the `Procfile` worker entry automatically.
-4. In the Railway dashboard, set the required environment variables.
-5. Add `credentials.json` and `token.json` through your deployment process or another secure secret/file strategy.
+| Source     | Method              |
+|------------|---------------------|
+| Greenhouse | Direct public API   |
+| YC Jobs    | Scraper             |
+| Prospect   | Scraper             |
+| Indeed     | JobSpy              |
+| ZipRecruiter | JobSpy            |
+| Google Jobs | JobSpy             |
+| LinkedIn   | JobSpy + MCP server |
+| Lever      | Playwright          |
+| Ashby      | Playwright          |
 
-Railway starts the worker with:
-
-```bash
-python scheduler.py
-```
-
-## Railway dashboard env vars
-
-Set these in Railway:
-
-- `ANTHROPIC_API_KEY`
-- `GMAIL_CREDENTIALS_PATH`
-- `GMAIL_FROM`
-- `GMAIL_TO`
-- `TZ`
-- `DIGEST_URL`
-- `UNIFIED_API_KEY`
-- `UNIFIED_LEVER_CONN_ID`
-- `UNIFIED_ASHBY_CONN_ID`
-
-## Notes
-
-- Gmail OAuth requires both `credentials.json` and the generated `token.json`.
-- The scheduler runs at 7:00 AM and 5:00 PM Pacific.
-- LinkedIn and Prospect are best-effort sources and may return zero jobs depending on the live site behavior.
-- Unified.to covers Lever and Ashby-backed companies when the Unified env vars are configured.
+## Tech stack
+Python, Haiku (scoring), Playwright, JobSpy, SQLite, Gmail API, launchd

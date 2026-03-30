@@ -1,155 +1,418 @@
-# job-digest — Prompt 9 (Final): Steel.dev Fetcher
-> Replaces Unified.to and OpenClaw entirely.
-> Run after Prompt 8 (tests) is complete.
+# job-digest — Prompt 10 (Final v2): Complete Source Architecture
+> Adds linkedin-mcp-server on top of JobSpy for deeper LinkedIn coverage.
+> Run after core pipeline (Prompts 1-7) is working.
 
 ---
 
-## Why Steel
+## Final Source Map
 
-Steel is a hosted headless browser API with a free tier (100 hrs/month).
-It has a /scrape endpoint that returns cleaned markdown from any URL.
-No sessions needed for read-only job board scraping.
-Works on Railway with zero infrastructure setup.
-
-Lever, Ashby, and LinkedIn are all public pages — Steel just browses them
-and returns the content. You then pass that markdown to Haiku to extract jobs.
+| Source          | Method                      | Coverage                         |
+|-----------------|-----------------------------|----------------------------------|
+| Greenhouse      | Direct API                  | Anthropic, Stripe, Anduril, etc. |
+| YC Jobs         | Existing scraper            | 4,000+ YC companies              |
+| Prospect        | Existing scraper            | Curated startups                 |
+| Indeed          | JobSpy (python-jobspy)      | Massive general coverage         |
+| ZipRecruiter    | JobSpy (python-jobspy)      | US remote roles                  |
+| Google Jobs     | JobSpy (python-jobspy)      | Aggregated from everywhere       |
+| LinkedIn        | JobSpy (best-effort)        | Rate limited, worth trying       |
+| LinkedIn (deep) | linkedin-mcp-server         | Your real session, better results|
+| Lever companies | Playwright                  | Notion, Plaid, Scale, etc.       |
+| Ashby companies | Playwright                  | Linear, Ramp, Retool, etc.       |
 
 ---
 
-## Setup
+## Step 1: Install everything
 
-Install:
-  pip install steel-sdk --break-system-packages
+```bash
+# JobSpy
+pip install python-jobspy playwright --break-system-packages
+playwright install chromium
+
+# linkedin-mcp-server (uv required)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uvx patchright install chromium
+
+# One-time LinkedIn login (opens browser window)
+uvx linkedin-scraper-mcp --login
+# Log in manually. Session saved to ~/.linkedin-mcp/profile/
+# You only need to do this once — re-run if session expires
+```
 
 Add to requirements.txt:
-  steel-sdk
+  python-jobspy
+  playwright
+  mcp
 
-Add to .env.example:
-  STEEL_API_KEY=      # get free key at app.steel.dev
+NOTE: linkedin-mcp-server is installed globally via uvx, NOT via pip.
+Your Python code communicates with it via subprocess + MCP protocol.
 
 ---
 
-## Add to config.py
+## Step 2: Add to config.py
 
 ```python
+JOBSPY_SEARCHES = [
+    "backend engineer remote",
+    "platform engineer remote",
+    "infrastructure engineer remote",
+    "SRE site reliability engineer remote",
+    "ML infrastructure engineer remote",
+    "DevOps engineer remote",
+]
+
+# Separate LinkedIn searches for the MCP server
+# These use your real session — more targeted, better results
+LINKEDIN_MCP_SEARCHES = [
+    "backend engineer",
+    "platform engineer",
+    "infrastructure engineer",
+    "ML infrastructure",
+    "SRE devops remote",
+]
+
 LEVER_COMPANIES = [
     "notion", "plaid", "scale", "figma",
     "checkr", "benchling", "superhuman",
+    "cloudflare", "warpdev",
 ]
 
 ASHBY_COMPANIES = [
     "linear", "ramp", "retool", "mercury",
     "cursor", "hex", "coda", "replit",
-]
-
-LINKEDIN_QUERIES = [
-    "backend engineer remote",
-    "platform engineer remote",
-    "infrastructure engineer remote",
-    "ML infrastructure engineer",
+    "loom", "dbtlabs",
 ]
 ```
 
 ---
 
-## Build fetchers/steel_scraper.py
+## Step 3: Build fetchers/jobspy_fetcher.py
 
 ```python
 """
-Steel.dev fetcher for Lever, Ashby, and LinkedIn.
-Uses Steel /scrape endpoint to get page markdown, then Haiku to extract jobs.
-Never crashes the pipeline — returns [] on any failure.
+JobSpy fetcher — scrapes Indeed, ZipRecruiter, Google Jobs, LinkedIn
+concurrently across all search queries.
+Indeed is the most reliable (no rate limiting).
+LinkedIn is best-effort here — the MCP server gives better LinkedIn results.
 """
 
-import os
+import asyncio
+from jobspy import scrape_jobs
+from config import JOBSPY_SEARCHES
+
+SITES = ["indeed", "zip_recruiter", "google", "linkedin"]
+RESULTS_PER_QUERY = 15
+HOURS_OLD = 24
+
+
+def _normalize(row: dict) -> dict:
+    url = str(row.get("job_url", "")).strip()
+    city = str(row.get("city", "")).strip()
+    state = str(row.get("state", "")).strip()
+    location = ", ".join(filter(None, [city, state])) or "Remote"
+    return {
+        "id":          f"jobspy:{row.get('site', '')}:{url[-40:]}",
+        "title":       str(row.get("title", "")).strip(),
+        "company":     str(row.get("company", "")).strip(),
+        "location":    location,
+        "url":         url,
+        "description": str(row.get("description", ""))[:600],
+        "source":      str(row.get("site", "jobspy")).strip(),
+        "posted_at":   str(row.get("date_posted", "")).strip(),
+    }
+
+
+async def _search_one(query: str) -> list[dict]:
+    try:
+        df = await asyncio.to_thread(
+            scrape_jobs,
+            site_name=SITES,
+            search_term=query,
+            location="Remote",
+            is_remote=True,
+            results_wanted=RESULTS_PER_QUERY,
+            hours_old=HOURS_OLD,
+            job_type="fulltime",
+            description_format="markdown",
+            country_indeed="USA",
+        )
+        if df is None or df.empty:
+            return []
+        jobs = []
+        for _, row in df.iterrows():
+            j = _normalize(row.to_dict())
+            if j["url"] and j["title"]:
+                jobs.append(j)
+        print(f"  [jobspy] '{query}': {len(jobs)} jobs")
+        return jobs
+    except Exception as e:
+        print(f"  [jobspy] '{query}' failed: {e}")
+        return []
+
+
+async def fetch_jobspy_jobs(queries: list[str] = None) -> list[dict]:
+    if queries is None:
+        queries = JOBSPY_SEARCHES
+    results = await asyncio.gather(
+        *[_search_one(q) for q in queries],
+        return_exceptions=True,
+    )
+    seen, jobs = set(), []
+    for r in results:
+        if isinstance(r, list):
+            for j in r:
+                if j["url"] and j["url"] not in seen:
+                    seen.add(j["url"])
+                    jobs.append(j)
+    print(f"  [jobspy] Total unique: {len(jobs)}")
+    return jobs
+```
+
+---
+
+## Step 4: Build fetchers/linkedin_mcp_fetcher.py
+
+```python
+"""
+LinkedIn fetcher using stickerdaniel/linkedin-mcp-server.
+Uses your real LinkedIn session (Patchright) — much better results
+than anonymous scraping. Requires one-time login setup.
+
+Setup:
+  uvx patchright install chromium
+  uvx linkedin-scraper-mcp --login
+
+Repo: https://github.com/stickerdaniel/linkedin-mcp-server
+"""
+
 import asyncio
 import json
-import httpx
-from anthropic import AsyncAnthropic
+import subprocess
+import os
+from config import LINKEDIN_MCP_SEARCHES
 
-STEEL_API_KEY    = os.getenv("STEEL_API_KEY")
-ANTHROPIC_KEY    = os.getenv("ANTHROPIC_API_KEY")
-STEEL_SCRAPE_URL = "https://api.steel.dev/v1/scrape"
 
-anthropic = AsyncAnthropic(api_key=ANTHROPIC_KEY)
-
-# ── Steel scrape ────────────────────────────────────────────────
-
-async def _scrape_url(url: str) -> str:
-    """
-    Call Steel /scrape and return cleaned markdown.
-    Returns empty string on failure.
-    """
-    if not STEEL_API_KEY:
-        return ""
+def _is_mcp_available() -> bool:
+    """Check if uvx and linkedin-scraper-mcp are available."""
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            res = await client.post(
-                STEEL_SCRAPE_URL,
-                headers={
-                    "Steel-Api-Key": STEEL_API_KEY,
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "url": url,
-                    "format": ["markdown"],
-                    "useProxy": True,
-                }
-            )
-            res.raise_for_status()
-            data = res.json()
-            return data.get("content", {}).get("markdown", "")
+        result = subprocess.run(
+            ["uvx", "--version"],
+            capture_output=True, text=True, timeout=5
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def _normalize_linkedin_job(job: dict) -> dict:
+    """Normalize linkedin-mcp-server job format to our schema."""
+    # linkedin-mcp-server returns: title, company, location, url,
+    # description, job_id, date_posted
+    url = str(job.get("url", job.get("job_url", ""))).strip()
+    return {
+        "id":          f"linkedin_mcp:{url[-40:]}",
+        "title":       str(job.get("title", "")).strip(),
+        "company":     str(job.get("company", "")).strip(),
+        "location":    str(job.get("location", "Remote")).strip(),
+        "url":         url,
+        "description": str(job.get("description", ""))[:600],
+        "source":      "linkedin_mcp",
+        "posted_at":   str(job.get("date_posted", "")).strip(),
+    }
+
+
+async def _call_mcp_search(query: str, location: str = "Remote") -> list[dict]:
+    """
+    Call the linkedin-mcp-server search_jobs tool via subprocess.
+
+    The server accepts JSON-RPC over stdio. We start it, send a
+    tool call, read the response, and shut it down.
+    """
+    # MCP request payload for search_jobs tool
+    request = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "search_jobs",
+            "arguments": {
+                "keywords": query,
+                "location": location,
+                "limit": 20,
+            }
+        }
+    }
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "uvx", "linkedin-scraper-mcp",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        # Send initialization handshake first (required by MCP protocol)
+        init_request = json.dumps({
+            "jsonrpc": "2.0",
+            "id": 0,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "job-digest", "version": "1.0"}
+            }
+        }) + "\n"
+
+        tool_request = json.dumps(request) + "\n"
+
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(
+                input=(init_request + tool_request).encode()
+            ),
+            timeout=60,  # LinkedIn pages can be slow
+        )
+
+        if proc.returncode != 0:
+            print(f"  [linkedin_mcp] MCP server error: {stderr.decode()[:100]}")
+            return []
+
+        # Parse responses — there will be multiple JSON lines
+        jobs = []
+        for line in stdout.decode().strip().split("\n"):
+            if not line.strip():
+                continue
+            try:
+                response = json.loads(line)
+                # Skip the init response (id=0)
+                if response.get("id") == 0:
+                    continue
+                # Extract job results from tool response
+                result = response.get("result", {})
+                content = result.get("content", [])
+                for item in content:
+                    if item.get("type") == "text":
+                        try:
+                            job_data = json.loads(item["text"])
+                            if isinstance(job_data, list):
+                                jobs.extend(job_data)
+                            elif isinstance(job_data, dict):
+                                jobs.append(job_data)
+                        except json.JSONDecodeError:
+                            pass
+            except json.JSONDecodeError:
+                continue
+
+        print(f"  [linkedin_mcp] '{query}': {len(jobs)} jobs")
+        return jobs
+
+    except asyncio.TimeoutError:
+        print(f"  [linkedin_mcp] '{query}' timed out")
+        return []
     except Exception as e:
-        print(f"  [steel] scrape failed for {url}: {e}")
-        return ""
+        print(f"  [linkedin_mcp] '{query}' error: {e}")
+        return []
 
 
-# ── Haiku extraction ────────────────────────────────────────────
+async def fetch_linkedin_mcp_jobs(searches: list[str] = None) -> list[dict]:
+    """
+    Fetch LinkedIn jobs using your real session via linkedin-mcp-server.
+    Falls back gracefully if the MCP server is not set up.
+    """
+    if searches is None:
+        searches = LINKEDIN_MCP_SEARCHES
+
+    if not _is_mcp_available():
+        print("  [linkedin_mcp] uvx not found — skipping")
+        print("  [linkedin_mcp] Setup: uvx patchright install chromium && uvx linkedin-scraper-mcp --login")
+        return []
+
+    results = await asyncio.gather(
+        *[_call_mcp_search(q) for q in searches],
+        return_exceptions=True,
+    )
+
+    seen, jobs = set(), []
+    for r in results:
+        if isinstance(r, list):
+            for raw_job in r:
+                normalized = _normalize_linkedin_job(raw_job)
+                if normalized["url"] and normalized["url"] not in seen:
+                    seen.add(normalized["url"])
+                    jobs.append(normalized)
+
+    print(f"  [linkedin_mcp] Total unique: {len(jobs)}")
+    return jobs
+```
+
+---
+
+## Step 5: Build fetchers/playwright_fetcher.py
+
+```python
+"""
+Playwright fetcher for Lever and Ashby job boards.
+Simple public pages — no bot detection. Haiku extracts structured data.
+"""
+
+import asyncio
+import json
+from playwright.async_api import async_playwright
+from anthropic import AsyncAnthropic
+import os
+from config import LEVER_COMPANIES, ASHBY_COMPANIES
+
+anthropic = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 EXTRACT_PROMPT = """
-You are parsing a job board page. Extract all engineering job listings.
+Parse this job board page. Extract all engineering job listings.
 
-Return ONLY a JSON array. Each item must have exactly these fields:
+Return ONLY a JSON array. Each item must have:
 {
   "title": "job title",
   "company": "company name",
-  "location": "location or Remote",
-  "url": "full https:// apply URL",
-  "description": "first 400 chars of description, or empty string"
+  "location": "city or Remote",
+  "url": "full https:// apply link",
+  "description": "first 300 chars or empty string"
 }
 
-Rules:
-- Only include: engineering, infrastructure, platform, SRE, DevOps, ML/AI roles
-- Skip: sales, marketing, HR, finance, legal, design, operations
-- If no apply URL found, skip the job
-- If no relevant jobs found, return []
-- Return ONLY the JSON array, no markdown, no explanation
+Include only: engineering, backend, platform, infra, SRE, DevOps, ML/AI.
+Exclude: sales, marketing, HR, finance, legal, design.
+If no relevant jobs: return []
+Return ONLY valid JSON array. No markdown fences.
 """
 
-async def _extract_jobs(markdown: str, company: str, source: str) -> list[dict]:
-    """Pass markdown to Haiku and extract structured jobs."""
-    if not markdown or len(markdown) < 100:
+
+async def _scrape_page(url: str) -> str:
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        try:
+            await page.goto(url, timeout=30000, wait_until="networkidle")
+            content = await page.inner_text("body")
+            await browser.close()
+            return content[:5000]
+        except Exception as e:
+            await browser.close()
+            raise e
+
+
+async def _extract_jobs(content: str, company: str, source: str) -> list[dict]:
+    if not content or len(content) < 50:
         return []
     try:
         res = await anthropic.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=2000,
             system=EXTRACT_PROMPT,
-            messages=[{
-                "role": "user",
-                "content": f"Company: {company}\n\nPage content:\n{markdown[:4000]}"
-            }]
+            messages=[{"role": "user", "content": f"Company: {company}\n\n{content}"}]
         )
         text = res.content[0].text.strip()
-        # strip markdown fences if present
-        if text.startswith("```"):
+        if "```" in text:
             text = text.split("```")[1]
             if text.startswith("json"):
                 text = text[4:]
-        jobs = json.loads(text)
+        jobs = json.loads(text.strip())
         if not isinstance(jobs, list):
             return []
-        # normalize to standard schema
         normalized = []
         for j in jobs:
             if not j.get("url"):
@@ -165,207 +428,161 @@ async def _extract_jobs(markdown: str, company: str, source: str) -> list[dict]:
                 "posted_at":   "",
             })
         return normalized
-    except (json.JSONDecodeError, Exception) as e:
-        print(f"  [steel] extraction failed for {company}: {e}")
+    except Exception as e:
+        print(f"  [playwright] extraction failed {company}: {e}")
         return []
 
-
-# ── Public fetcher functions ────────────────────────────────────
 
 async def _fetch_one(url: str, company: str, source: str) -> list[dict]:
-    markdown = await _scrape_url(url)
-    jobs = await _extract_jobs(markdown, company, source)
-    print(f"  [steel/{source}] {company}: {len(jobs)} jobs")
-    return jobs
-
-
-async def fetch_lever_jobs(companies: list[str]) -> list[dict]:
-    if not STEEL_API_KEY:
-        print("  [steel/lever] STEEL_API_KEY not set — skipping")
-        return []
-    tasks = [
-        _fetch_one(
-            url=f"https://jobs.lever.co/{company}",
-            company=company,
-            source="lever",
-        )
-        for company in companies
-    ]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    jobs = []
-    for r in results:
-        if isinstance(r, list):
-            jobs.extend(r)
-    return jobs
-
-
-async def fetch_ashby_jobs(companies: list[str]) -> list[dict]:
-    if not STEEL_API_KEY:
-        print("  [steel/ashby] STEEL_API_KEY not set — skipping")
-        return []
-    tasks = [
-        _fetch_one(
-            url=f"https://jobs.ashby.com/{company}",
-            company=company,
-            source="ashby",
-        )
-        for company in companies
-    ]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    jobs = []
-    for r in results:
-        if isinstance(r, list):
-            jobs.extend(r)
-    return jobs
-
-
-async def fetch_linkedin_jobs(queries: list[str]) -> list[dict]:
-    """
-    LinkedIn best-effort — may get blocked.
-    Uses 24hr filter (f_TPR=r86400) and remote filter (f_WT=2).
-    """
-    if not STEEL_API_KEY:
-        print("  [steel/linkedin] STEEL_API_KEY not set — skipping")
+    try:
+        content = await _scrape_page(url)
+        jobs = await _extract_jobs(content, company, source)
+        print(f"  [playwright/{source}] {company}: {len(jobs)} jobs")
+        return jobs
+    except Exception as e:
+        print(f"  [playwright/{source}] {company} error: {e}")
         return []
 
-    base = (
-        "https://www.linkedin.com/jobs/search/"
-        "?keywords={q}&location=Remote&f_TPR=r86400&f_WT=2"
+
+async def fetch_lever_jobs(companies: list[str] = None) -> list[dict]:
+    if companies is None:
+        companies = LEVER_COMPANIES
+    results = await asyncio.gather(
+        *[_fetch_one(f"https://jobs.lever.co/{c}", c, "lever") for c in companies],
+        return_exceptions=True,
     )
-    tasks = [
-        _fetch_one(
-            url=base.format(q=q.replace(" ", "%20")),
-            company="linkedin",
-            source="linkedin",
-        )
-        for q in queries
-    ]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    return [j for r in results if isinstance(r, list) for j in r]
+
+
+async def fetch_ashby_jobs(companies: list[str] = None) -> list[dict]:
+    if companies is None:
+        companies = ASHBY_COMPANIES
+    results = await asyncio.gather(
+        *[_fetch_one(f"https://jobs.ashby.com/{c}", c, "ashby") for c in companies],
+        return_exceptions=True,
+    )
+    return [j for r in results if isinstance(r, list) for j in r]
+```
+
+---
+
+## Step 6: Update main.py
+
+```python
+from fetchers.greenhouse import fetch_greenhouse_jobs
+from fetchers.yc import fetch_yc
+from fetchers.prospect import fetch_prospect
+from fetchers.jobspy_fetcher import fetch_jobspy_jobs
+from fetchers.linkedin_mcp_fetcher import fetch_linkedin_mcp_jobs
+from fetchers.playwright_fetcher import fetch_lever_jobs, fetch_ashby_jobs
+from config import GREENHOUSE_COMPANIES
+
+async def run_pipeline():
+    print(f"Starting — {datetime.now()}")
+
+    results = await asyncio.gather(
+        fetch_greenhouse_jobs(GREENHOUSE_COMPANIES),
+        fetch_yc(),
+        fetch_prospect(),
+        fetch_jobspy_jobs(),          # Indeed + ZipRecruiter + Google + LinkedIn
+        fetch_linkedin_mcp_jobs(),    # LinkedIn via real session (deeper)
+        fetch_lever_jobs(),           # Playwright
+        fetch_ashby_jobs(),           # Playwright
+        return_exceptions=True,
+    )
+
+    sources = ["greenhouse", "yc", "prospect", "jobspy",
+               "linkedin_mcp", "lever", "ashby"]
+    all_jobs = []
+    for i, r in enumerate(results):
+        if isinstance(r, list):
+            print(f"  [{sources[i]}] {len(r)} jobs")
+            all_jobs.extend(r)
+        else:
+            print(f"  [{sources[i]}] ERROR: {r}")
 
     # deduplicate by URL
     seen, jobs = set(), []
-    for r in results:
-        if isinstance(r, list):
-            for j in r:
-                if j["url"] not in seen:
-                    seen.add(j["url"])
-                    jobs.append(j)
-    print(f"  [steel/linkedin] {len(jobs)} unique jobs total")
-    return jobs
+    for j in all_jobs:
+        if j["url"] and j["url"] not in seen:
+            seen.add(j["url"])
+            jobs.append(j)
+
+    print(f"  Total unique before scoring: {len(jobs)}")
+
+    scored = await score_jobs(jobs, MY_PROFILE)
+    html = render_html(scored, str(datetime.now()))
+    send_digest(scored[:TOP_N_EMAIL], html)
+    print(f"Pipeline complete — {len(scored)} jobs in digest")
 ```
 
 ---
 
-## Wire into main.py
+## Step 7: One-time LinkedIn MCP setup
 
-```python
-# Remove any old linkedin/unified/openclaw imports
+Run these once before first pipeline run:
 
-from fetchers.steel_scraper import (
-    fetch_lever_jobs,
-    fetch_ashby_jobs,
-    fetch_linkedin_jobs,
-)
-from config import LEVER_COMPANIES, ASHBY_COMPANIES, LINKEDIN_QUERIES
+```bash
+# Install uv if not already installed
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# In run_pipeline(), update asyncio.gather:
-results = await asyncio.gather(
-    fetch_greenhouse_jobs(GREENHOUSE_COMPANIES),
-    fetch_yc(),
-    fetch_prospect(),
-    fetch_lever_jobs(LEVER_COMPANIES),
-    fetch_ashby_jobs(ASHBY_COMPANIES),
-    fetch_linkedin_jobs(LINKEDIN_QUERIES),
-    return_exceptions=True
-)
+# Install Patchright browser
+uvx patchright install chromium
+
+# Login to LinkedIn (opens real browser window)
+uvx linkedin-scraper-mcp --login
+# Complete login manually — 2FA, captcha etc.
+# Session saved to ~/.linkedin-mcp/profile/
+# Re-run this command if you get auth errors later
 ```
 
----
-
-## Update companies.txt
-
-Remove from companies.txt (now in config.py LEVER/ASHBY lists):
-  notion, plaid, scale, figma, linear, ramp, retool,
-  mercury, cursor, hex, replit, coda
-
-Add comment at top:
-  # GREENHOUSE companies only — direct public API, no auth needed
-  # Lever  → config.py LEVER_COMPANIES  (fetched via Steel.dev)
-  # Ashby  → config.py ASHBY_COMPANIES  (fetched via Steel.dev)
-  # LinkedIn → config.py LINKEDIN_QUERIES (fetched via Steel.dev)
+Add to .env:
+  # No new vars needed for LinkedIn MCP — uses saved profile
 
 ---
 
-## Add to .env (Railway)
+## Step 8: launchd plist (same as before)
 
-In Railway dashboard, add:
-  STEEL_API_KEY=your_key_from_app_steel_dev
+~/Library/LaunchAgents/com.anish.job-digest.plist — 7am + 5pm Pacific.
+Make sure load_dotenv() is at the very top of main.py.
 
 ---
 
-## Add tests to tests/test_fetchers.py
+## Step 9: Verify
 
-```python
-def test_lever_skips_gracefully_without_api_key(monkeypatch):
-    monkeypatch.delenv("STEEL_API_KEY", raising=False)
-    jobs = asyncio.run(fetch_lever_jobs(["notion"]))
-    assert jobs == []
+```bash
+# Test LinkedIn MCP alone first
+python -c "
+import asyncio
+from fetchers.linkedin_mcp_fetcher import fetch_linkedin_mcp_jobs
+jobs = asyncio.run(fetch_linkedin_mcp_jobs(['backend engineer']))
+print(f'LinkedIn MCP: {len(jobs)} jobs')
+if jobs: print(jobs[0])
+"
 
-def test_ashby_skips_gracefully_without_api_key(monkeypatch):
-    monkeypatch.delenv("STEEL_API_KEY", raising=False)
-    jobs = asyncio.run(fetch_ashby_jobs(["linear"]))
-    assert jobs == []
-
-def test_linkedin_skips_gracefully_without_api_key(monkeypatch):
-    monkeypatch.delenv("STEEL_API_KEY", raising=False)
-    jobs = asyncio.run(fetch_linkedin_jobs(["backend engineer"]))
-    assert jobs == []
-
-def test_extracted_jobs_pass_schema(sample_jobs):
-    # re-use existing schema validation
-    for job in sample_jobs:
-        errors = validate_job(job)
-        assert errors == [], f"Schema errors: {errors}"
-
-@pytest.mark.slow
-async def test_lever_notion_live():
-    jobs = await fetch_lever_jobs(["notion"])
-    assert isinstance(jobs, list)
-    if jobs:  # may be empty if notion has no eng roles
-        assert all(j["source"] == "lever" for j in jobs)
-        assert all(j["url"].startswith("https://") for j in jobs)
-
-@pytest.mark.slow
-async def test_ashby_linear_live():
-    jobs = await fetch_ashby_jobs(["linear"])
-    assert isinstance(jobs, list)
-
-@pytest.mark.slow
-async def test_linkedin_does_not_crash():
-    # passes even if linkedin blocks
-    jobs = await fetch_linkedin_jobs(["backend engineer remote"])
-    assert isinstance(jobs, list)
+# Run full pipeline
+python main.py
 ```
 
+Expected output:
+  [greenhouse] 45 jobs
+  [yc] 23 jobs
+  [prospect] 18 jobs
+  [jobspy] Total unique: 185 jobs
+  [linkedin_mcp] 'backend engineer': 18 jobs
+  [linkedin_mcp] Total unique: 67 jobs
+  [playwright/lever] notion: 4 jobs
+  [playwright/ashby] linear: 7 jobs
+  Total unique before scoring: 310 jobs
+  Pipeline complete — 52 jobs in digest
+
 ---
 
-## Verify
+## Step 10: If LinkedIn MCP session expires
 
-Run fast tests:
-  pytest -m "not slow" -v
-
-Run full pipeline:
-  python main.py
-
-Expected log:
-  [greenhouse] anthropic: 12 jobs
-  [steel/lever] notion: 5 jobs
-  [steel/lever] plaid: 3 jobs
-  [steel/ashby] linear: 8 jobs
-  [steel/ashby] ramp: 4 jobs
-  [steel/linkedin] 14 unique jobs total
-  Scoring 142 jobs with Haiku...
-  Pipeline complete — 31 jobs in digest
-
-Check output/digest.html includes jobs from lever/ashby/linkedin sources.
+Sessions expire periodically. When you see auth errors:
+```bash
+uvx linkedin-scraper-mcp --login
+```
+Takes 2 minutes. That's it.
 ```

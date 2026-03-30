@@ -1,0 +1,932 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Job Digest Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    >
+    <style>
+      :root {
+        --bg: #0a0a0a;
+        --panel: #0f0f0f;
+        --row: #0d0d0d;
+        --row-hover: #111111;
+        --text: #e2e2e2;
+        --accent: #00ff88;
+        --warn: #ffd700;
+        --dim: #444444;
+        --muted: #8a8a8a;
+        --line: #1e1e1e;
+        --blue: #5e7fb2;
+        --blue-bright: #7fb7ff;
+        --orange: #c98b3b;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "IBM Plex Mono", monospace;
+      }
+
+      body {
+        overflow: hidden;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      .app {
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .topbar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 48px;
+        display: grid;
+        grid-template-columns: minmax(220px, 1.2fr) minmax(240px, 1fr) minmax(320px, 1.5fr);
+        align-items: center;
+        gap: 12px;
+        padding: 0 14px;
+        background: rgba(10, 10, 10, 0.96);
+        border-bottom: 1px solid var(--line);
+        z-index: 20;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        white-space: nowrap;
+        overflow: hidden;
+      }
+
+      .brand-title {
+        font-size: 11px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--text);
+      }
+
+      .brand-separator {
+        color: var(--dim);
+      }
+
+      .generated-at {
+        font-size: 11px;
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .search-wrap {
+        display: flex;
+        justify-content: center;
+      }
+
+      .search {
+        width: 220px;
+        max-width: 100%;
+        height: 30px;
+        border: 1px solid var(--line);
+        background: #0d0d0d;
+        color: var(--text);
+        padding: 0 10px;
+        outline: none;
+        transition: width 140ms ease, border-color 140ms ease;
+      }
+
+      .search:focus {
+        width: 320px;
+        border-color: var(--accent);
+      }
+
+      .stats {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        overflow: hidden;
+      }
+
+      .pill {
+        height: 24px;
+        display: inline-flex;
+        align-items: center;
+        padding: 0 9px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        background: var(--panel);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      .filterbar {
+        position: fixed;
+        top: 48px;
+        left: 0;
+        right: 0;
+        min-height: 32px;
+        display: grid;
+        grid-template-columns: 1.4fr 1.2fr auto auto;
+        gap: 12px;
+        align-items: center;
+        padding: 6px 14px;
+        background: rgba(10, 10, 10, 0.96);
+        border-bottom: 1px solid var(--line);
+        z-index: 19;
+      }
+
+      .filter-group {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .filter-label {
+        font-size: 10px;
+        color: var(--dim);
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        margin-right: 4px;
+      }
+
+      .filter-chip {
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--muted);
+        padding: 3px 8px;
+        min-height: 22px;
+        cursor: pointer;
+        text-transform: uppercase;
+        font-size: 11px;
+      }
+
+      .filter-chip:hover,
+      .filter-chip.active {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+
+      .result-count {
+        text-align: right;
+        color: var(--muted);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      .content {
+        padding-top: 80px;
+        height: 100vh;
+      }
+
+      .table {
+        height: calc(100vh - 80px);
+        display: flex;
+        flex-direction: column;
+      }
+
+      .table-head,
+      .row {
+        display: grid;
+        grid-template-columns: 48px 44px minmax(280px, 2.4fr) minmax(160px, 1.2fr) minmax(120px, 1fr) 72px 116px;
+        gap: 12px;
+        align-items: center;
+        padding: 0 14px;
+      }
+
+      .table-head {
+        min-height: 34px;
+        border-bottom: 1px solid var(--line);
+        color: var(--dim);
+        font-size: 10px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      .rows {
+        overflow: auto;
+        height: 100%;
+      }
+
+      .row {
+        min-height: 50px;
+        border-bottom: 1px solid var(--line);
+        background: var(--row);
+        color: var(--text);
+        font-size: 12px;
+        transition: background-color 80ms ease, opacity 120ms ease, border-left-color 120ms ease;
+        border-left: 2px solid transparent;
+      }
+
+      .row:hover {
+        background: var(--row-hover);
+      }
+
+      .row.row-apply {
+        border-left-color: var(--accent);
+      }
+
+      .row.row-skip {
+        opacity: 0.4;
+      }
+
+      .row.load-in {
+        opacity: 0;
+        transform: translateY(4px);
+        animation: row-enter 180ms ease forwards;
+      }
+
+      @keyframes row-enter {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .score-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 42px;
+        min-height: 24px;
+        border: 1px solid var(--line);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .score-solid {
+        background: var(--accent);
+        color: #000000;
+        border-color: var(--accent);
+      }
+
+      .score-strong {
+        color: var(--accent);
+      }
+
+      .score-warn {
+        color: var(--warn);
+      }
+
+      .score-dim {
+        color: var(--dim);
+      }
+
+      .source-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 34px;
+        min-height: 20px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+      }
+
+      .source-gh,
+      .source-in,
+      .source-li,
+      .source-go,
+      .source-zip {
+        color: var(--blue);
+      }
+
+      .source-lm {
+        color: var(--blue-bright);
+      }
+
+      .source-yc {
+        color: var(--orange);
+      }
+
+      .title-link {
+        color: var(--text);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      .title-link:hover {
+        color: var(--accent);
+      }
+
+      .truncate {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .company,
+      .location,
+      .date {
+        color: var(--muted);
+      }
+
+      .actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+      }
+
+      .action-btn {
+        min-width: 32px;
+        height: 24px;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        padding: 0 8px;
+        transition: transform 80ms ease, color 80ms ease, border-color 80ms ease, opacity 80ms ease;
+      }
+
+      .action-btn:active {
+        transform: scale(0.95);
+      }
+
+      .action-btn.open-btn {
+        opacity: 1;
+      }
+
+      .action-btn.copy-btn {
+        opacity: 0;
+      }
+
+      .row:hover .action-btn.copy-btn {
+        opacity: 1;
+      }
+
+      .action-btn:hover {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+
+      mark {
+        background: rgba(255, 215, 0, 0.16);
+        color: var(--warn);
+        padding: 0;
+      }
+
+      .state-screen {
+        height: calc(100vh - 80px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted);
+        font-size: 14px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      .toast {
+        position: fixed;
+        right: 18px;
+        bottom: 18px;
+        padding: 8px 12px;
+        border: 1px solid var(--accent);
+        color: var(--accent);
+        background: rgba(10, 10, 10, 0.96);
+        font-size: 11px;
+        opacity: 0;
+        transform: translateY(8px);
+        pointer-events: none;
+        transition: opacity 140ms ease, transform 140ms ease;
+        z-index: 30;
+      }
+
+      .toast.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      @media (max-width: 980px) {
+        .topbar,
+        .filterbar {
+          grid-template-columns: 1fr;
+          height: auto;
+        }
+
+        .topbar {
+          padding: 10px 14px;
+        }
+
+        .filterbar {
+          top: 86px;
+          padding: 8px 14px;
+        }
+
+        .content {
+          padding-top: 166px;
+        }
+
+        .table {
+          height: calc(100vh - 166px);
+        }
+
+        .table-head,
+        .row {
+          grid-template-columns: 48px 44px minmax(220px, 2.2fr) minmax(130px, 1fr) 92px 72px 104px;
+        }
+
+        .stats {
+          justify-content: flex-start;
+          flex-wrap: wrap;
+        }
+
+        .result-count {
+          text-align: left;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-title">JOB DIGEST</span>
+          <span class="brand-separator">|</span>
+          <span class="generated-at" id="generated-at">awaiting data</span>
+        </div>
+        <div class="search-wrap">
+          <input id="search" class="search" type="search" autocomplete="off" placeholder="search title / company   [/]" />
+        </div>
+        <div class="stats" id="stats"></div>
+      </header>
+
+      <section class="filterbar">
+        <div class="filter-group" id="status-filters"></div>
+        <div class="filter-group" id="source-filters"></div>
+        <div class="filter-group" id="sort-filters"></div>
+        <div class="result-count" id="result-count">showing 0 of 0</div>
+      </section>
+
+      <main class="content">
+        <div class="table">
+          <div class="table-head">
+            <div>SCR</div>
+            <div>SRC</div>
+            <div>TITLE</div>
+            <div>COMPANY</div>
+            <div>LOC</div>
+            <div>DATE</div>
+            <div>---</div>
+          </div>
+          <div class="rows" id="rows">
+            <div class="state-screen">LOADING DIGEST...</div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+      const DATA_URL = "./data/jobs.json";
+      const STATUS_FILTERS = [
+        ["all", "ALL"],
+        ["new", "NEW"],
+        ["applied", "APPLIED"],
+        ["interviewing", "INTERVIEWING"],
+        ["skipped", "SKIPPED"],
+        ["offer", "OFFER"]
+      ];
+      const SOURCE_FILTERS = [
+        ["all", "ALL"],
+        ["greenhouse", "GH"],
+        ["indeed", "IN"],
+        ["google", "GO"],
+        ["linkedin", "LI"],
+        ["linkedin_mcp", "LM"],
+        ["lever", "LV"],
+        ["ashby", "AS"],
+        ["yc", "YC"],
+        ["zip_recruiter", "ZIP"],
+        ["prospect", "PR"]
+      ];
+      const SORT_FILTERS = [
+        ["score", "SCORE"],
+        ["date", "DATE"],
+        ["company", "COMPANY"]
+      ];
+
+      const state = {
+        payload: null,
+        jobs: [],
+        search: "",
+        status: "all",
+        source: "all",
+        sort: "score",
+        animateRows: true,
+        rowState: new Map()
+      };
+
+      const rowsEl = document.getElementById("rows");
+      const statsEl = document.getElementById("stats");
+      const generatedAtEl = document.getElementById("generated-at");
+      const resultCountEl = document.getElementById("result-count");
+      const toastEl = document.getElementById("toast");
+      const searchEl = document.getElementById("search");
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function escapeRegex(value) {
+        return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      }
+
+      function highlight(value) {
+        const text = String(value ?? "");
+        const query = state.search.trim();
+        if (!query) {
+          return escapeHtml(text);
+        }
+        const pattern = new RegExp(`(${escapeRegex(query)})`, "ig");
+        return escapeHtml(text).replace(pattern, "<mark>$1</mark>");
+      }
+
+      function formatGeneratedAt(value) {
+        if (!value) {
+          return "awaiting data";
+        }
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+          return value;
+        }
+        return date.toLocaleString(undefined, {
+          year: "numeric",
+          month: "short",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit"
+        });
+      }
+
+      function relativeTime(value) {
+        if (!value) {
+          return "--";
+        }
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+          return String(value).slice(0, 10) || "--";
+        }
+        const diffMs = Date.now() - date.getTime();
+        if (diffMs < 0) {
+          return "now";
+        }
+        const diffMinutes = Math.floor(diffMs / 60000);
+        if (diffMinutes < 60) {
+          return `${Math.max(diffMinutes, 1)}m`;
+        }
+        const diffHours = Math.floor(diffMinutes / 60);
+        if (diffHours < 24) {
+          return `${diffHours}h`;
+        }
+        const diffDays = Math.floor(diffHours / 24);
+        if (diffDays === 1) {
+          return "today";
+        }
+        if (diffDays < 7) {
+          return `${diffDays}d`;
+        }
+        return date.toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric"
+        });
+      }
+
+      function scoreClass(score) {
+        if (score >= 85) return "score-solid";
+        if (score >= 70) return "score-strong";
+        if (score >= 55) return "score-warn";
+        return "score-dim";
+      }
+
+      function sourceMeta(source) {
+        const mapping = {
+          greenhouse: { label: "GH", className: "source-gh" },
+          indeed: { label: "IN", className: "source-in" },
+          google: { label: "GO", className: "source-go" },
+          linkedin: { label: "LI", className: "source-li" },
+          linkedin_mcp: { label: "LM", className: "source-lm" },
+          lever: { label: "LV", className: "source-lv" },
+          ashby: { label: "AS", className: "source-as" },
+          yc: { label: "YC", className: "source-yc" },
+          zip_recruiter: { label: "ZIP", className: "source-zip" },
+          prospect: { label: "PR", className: "source-pr" }
+        };
+        return mapping[source] || { label: String(source || "--").slice(0, 3).toUpperCase(), className: "" };
+      }
+
+      function jobDate(job) {
+        return job.posted_at || job.last_seen || job.first_seen || "";
+      }
+
+      function filteredJobs() {
+        const query = state.search.trim().toLowerCase();
+        const jobs = state.jobs.filter((job) => {
+          const jobStatus = String(job.status || "new").toLowerCase();
+          const source = String(job.source || "").toLowerCase();
+          const title = String(job.title || "").toLowerCase();
+          const company = String(job.company || "").toLowerCase();
+
+          if (state.status !== "all" && jobStatus !== state.status) {
+            return false;
+          }
+          if (state.source !== "all" && source !== state.source) {
+            return false;
+          }
+          if (query && !title.includes(query) && !company.includes(query)) {
+            return false;
+          }
+          return true;
+        });
+
+        const sorter = {
+          score: (a, b) => Number(b.score || 0) - Number(a.score || 0),
+          date: (a, b) => new Date(jobDate(b)).getTime() - new Date(jobDate(a)).getTime(),
+          company: (a, b) => String(a.company || "").localeCompare(String(b.company || ""))
+        }[state.sort];
+
+        return [...jobs].sort(sorter);
+      }
+
+      function setToast(message) {
+        toastEl.textContent = message;
+        toastEl.classList.add("visible");
+        window.clearTimeout(setToast.timer);
+        setToast.timer = window.setTimeout(() => {
+          toastEl.classList.remove("visible");
+        }, 2000);
+      }
+
+      async function copyToClipboard(text) {
+        try {
+          await navigator.clipboard.writeText(text);
+          return true;
+        } catch (error) {
+          const textarea = document.createElement("textarea");
+          textarea.value = text;
+          textarea.style.position = "fixed";
+          textarea.style.opacity = "0";
+          document.body.appendChild(textarea);
+          textarea.focus();
+          textarea.select();
+          try {
+            document.execCommand("copy");
+            return true;
+          } catch (fallbackError) {
+            return false;
+          } finally {
+            textarea.remove();
+          }
+        }
+      }
+
+      function renderStats() {
+        const stats = state.payload?.stats || {};
+        const byStatus = stats.by_status || {};
+        const pills = [
+          `${stats.total_seen || state.jobs.length || 0} total`,
+          `${byStatus.new || 0} new`,
+          `${byStatus.applied || 0} applied`,
+          `${byStatus.interviewing || 0} interviewing`
+        ];
+        statsEl.innerHTML = pills.map((pill) => `<span class="pill">${escapeHtml(pill)}</span>`).join("");
+      }
+
+      function renderFilters() {
+        const renderGroup = (targetId, items, current, onClick) => {
+          const target = document.getElementById(targetId);
+          target.innerHTML = items.map(([value, label]) => (
+            `<button class="filter-chip ${current === value ? "active" : ""}" data-value="${escapeHtml(value)}">${escapeHtml(label)}</button>`
+          )).join("");
+          target.querySelectorAll(".filter-chip").forEach((button) => {
+            button.addEventListener("click", () => onClick(button.dataset.value));
+          });
+        };
+
+        renderGroup("status-filters", STATUS_FILTERS, state.status, (value) => {
+          state.status = value;
+          state.animateRows = false;
+          render();
+        });
+        renderGroup("source-filters", SOURCE_FILTERS, state.source, (value) => {
+          state.source = value;
+          state.animateRows = false;
+          render();
+        });
+        renderGroup("sort-filters", SORT_FILTERS, state.sort, (value) => {
+          state.sort = value;
+          state.animateRows = false;
+          render();
+        });
+
+        document.getElementById("status-filters").insertAdjacentHTML("afterbegin", '<span class="filter-label">status</span>');
+        document.getElementById("source-filters").insertAdjacentHTML("afterbegin", '<span class="filter-label">source</span>');
+        document.getElementById("sort-filters").insertAdjacentHTML("afterbegin", '<span class="filter-label">sort</span>');
+      }
+
+      function bindRowActions() {
+        rowsEl.querySelectorAll("[data-open]").forEach((button) => {
+          button.addEventListener("click", () => {
+            window.open(button.dataset.open, "_blank", "noopener,noreferrer");
+          });
+        });
+
+        rowsEl.querySelectorAll("[data-copy]").forEach((button) => {
+          button.addEventListener("click", async () => {
+            const action = button.dataset.action;
+            const url = button.dataset.url;
+            const command = `python cli.py ${action} ${url}`;
+            const copied = await copyToClipboard(command);
+            if (!copied) {
+              setToast("COPY FAILED");
+              return;
+            }
+            state.rowState.set(url, action);
+            setToast("COPIED!");
+            render();
+          });
+        });
+      }
+
+      function renderRows() {
+        const jobs = filteredJobs();
+        resultCountEl.textContent = `showing ${jobs.length} of ${state.jobs.length}`;
+
+        if (!jobs.length) {
+          rowsEl.innerHTML = '<div class="state-screen">NO MATCHING JOBS</div>';
+          return;
+        }
+
+        rowsEl.innerHTML = jobs.map((job, index) => {
+          const score = Number(job.score || 0);
+          const source = sourceMeta(job.source);
+          const rowMode = state.rowState.get(job.url);
+          const rowClass = [
+            "row",
+            state.animateRows && index < 50 ? "load-in" : "",
+            rowMode === "apply" ? "row-apply" : "",
+            rowMode === "skip" ? "row-skip" : ""
+          ].filter(Boolean).join(" ");
+          const delay = state.animateRows && index < 50 ? `style="animation-delay:${index * 20}ms"` : "";
+          return `
+            <div class="${rowClass}" ${delay}>
+              <div><span class="score-badge ${scoreClass(score)}">${escapeHtml(score || "--")}</span></div>
+              <div><span class="source-pill ${source.className}">${escapeHtml(source.label)}</span></div>
+              <div class="truncate">
+                <a class="title-link truncate" href="${escapeHtml(job.url || "#")}" target="_blank" rel="noopener noreferrer">
+                  ${highlight(job.title || "")}
+                </a>
+              </div>
+              <div class="company truncate">${highlight(job.company || "")}</div>
+              <div class="location truncate">${escapeHtml(job.location || "--")}</div>
+              <div class="date truncate">${escapeHtml(relativeTime(jobDate(job)))}</div>
+              <div class="actions">
+                <button class="action-btn open-btn" data-open="${escapeHtml(job.url || "#")}">→</button>
+                <button class="action-btn copy-btn" data-copy="1" data-action="apply" data-url="${escapeHtml(job.url || "")}">APPLY</button>
+                <button class="action-btn copy-btn" data-copy="1" data-action="skip" data-url="${escapeHtml(job.url || "")}">SKIP</button>
+              </div>
+            </div>
+          `;
+        }).join("");
+
+        bindRowActions();
+        state.animateRows = false;
+      }
+
+      function render() {
+        generatedAtEl.textContent = formatGeneratedAt(state.payload?.generated_at);
+        renderStats();
+        renderFilters();
+        renderRows();
+      }
+
+      function setLoading(message) {
+        rowsEl.innerHTML = `<div class="state-screen">${escapeHtml(message)}</div>`;
+      }
+
+      function loadViaXhr(url) {
+        return new Promise((resolve, reject) => {
+          const request = new XMLHttpRequest();
+          request.overrideMimeType("application/json");
+          request.open("GET", url, true);
+          request.onreadystatechange = () => {
+            if (request.readyState !== 4) {
+              return;
+            }
+            if (request.status === 0 || (request.status >= 200 && request.status < 300)) {
+              try {
+                resolve(JSON.parse(request.responseText));
+              } catch (error) {
+                reject(error);
+              }
+              return;
+            }
+            reject(new Error(`XHR ${request.status}`));
+          };
+          request.onerror = () => reject(new Error("XHR failed"));
+          request.send(null);
+        });
+      }
+
+      async function loadPayload() {
+        try {
+          const response = await fetch(DATA_URL, { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          return await response.json();
+        } catch (error) {
+          if (window.location.protocol === "file:") {
+            return loadViaXhr(DATA_URL);
+          }
+          throw error;
+        }
+      }
+
+      function bindGlobalEvents() {
+        searchEl.addEventListener("input", (event) => {
+          state.search = event.target.value;
+          state.animateRows = false;
+          renderRows();
+        });
+
+        window.addEventListener("keydown", (event) => {
+          if (event.key === "/" && document.activeElement !== searchEl) {
+            event.preventDefault();
+            searchEl.focus();
+            searchEl.select();
+          }
+          if (event.key === "Escape") {
+            searchEl.value = "";
+            state.search = "";
+            searchEl.blur();
+            state.animateRows = false;
+            renderRows();
+          }
+
+          const statusShortcut = {
+            "1": "all",
+            "2": "new",
+            "3": "applied",
+            "4": "interviewing",
+            "5": "skipped"
+          }[event.key];
+          if (statusShortcut) {
+            state.status = statusShortcut;
+            state.animateRows = false;
+            render();
+          }
+        });
+      }
+
+      async function init() {
+        bindGlobalEvents();
+        setLoading("LOADING DIGEST...");
+        try {
+          const payload = await loadPayload();
+          state.payload = payload;
+          state.jobs = Array.isArray(payload.jobs) ? payload.jobs : [];
+          render();
+        } catch (error) {
+          generatedAtEl.textContent = "data unavailable";
+          statsEl.innerHTML = "";
+          rowsEl.innerHTML = '<div class="state-screen">COULD NOT LOAD DATA — check jobs.json</div>';
+          resultCountEl.textContent = "showing 0 of 0";
+        }
+      }
+
+      init();
+    </script>
+  </body>
+</html>

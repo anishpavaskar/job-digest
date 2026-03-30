@@ -15,11 +15,15 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-from config import GMAIL_CREDENTIALS_PATH, GMAIL_FROM, GMAIL_TO, TOP_N_EMAIL
+from config import DIGEST_URL, GMAIL_CREDENTIALS_PATH, GMAIL_FROM, GMAIL_TO, TOP_N_EMAIL, VERCEL_URL
+from logging_config import get_logger
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
+ENV_SCOPES = ["https://www.googleapis.com/auth/gmail.compose"]
 PROJECT_ROOT = Path(__file__).resolve().parent
 TOKEN_PATH = PROJECT_ROOT / "token.json"
+TOKEN_URI = "https://oauth2.googleapis.com/token"
+log = get_logger("emailer")
 
 
 def _resolve_credentials_path() -> Path:
@@ -31,6 +35,35 @@ def _resolve_credentials_path() -> Path:
 
 def _save_credentials(creds: Credentials) -> None:
     TOKEN_PATH.write_text(creds.to_json(), encoding="utf-8")
+
+
+def _load_env_credentials() -> Credentials | None:
+    client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+    client_secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+    refresh_token = os.getenv("GOOGLE_REFRESH_TOKEN", "").strip()
+    if not client_id or not client_secret or not refresh_token:
+        return None
+
+    creds = Credentials(
+        token=None,
+        refresh_token=refresh_token,
+        token_uri=TOKEN_URI,
+        client_id=client_id,
+        client_secret=client_secret,
+        scopes=ENV_SCOPES,
+    )
+    creds.refresh(Request())
+    return creds
+
+
+def _has_env_google_auth() -> bool:
+    return all(
+        [
+            os.getenv("GOOGLE_CLIENT_ID", "").strip(),
+            os.getenv("GOOGLE_CLIENT_SECRET", "").strip(),
+            os.getenv("GOOGLE_REFRESH_TOKEN", "").strip(),
+        ]
+    )
 
 
 def _load_credentials(interactive: bool = True) -> Credentials:
@@ -45,6 +78,10 @@ def _load_credentials(interactive: bool = True) -> Credentials:
 
     if creds and creds.valid:
         return creds
+
+    env_creds = _load_env_credentials()
+    if env_creds is not None:
+        return env_creds
 
     if not interactive:
         raise RuntimeError(f"Gmail token missing or invalid. Run setup_gmail_auth.py to create {TOKEN_PATH}.")
@@ -68,12 +105,16 @@ def _gmail_service(interactive: bool = False):
 
 def _send_html_message(subject: str, html_body: str, interactive: bool = False) -> None:
     if not GMAIL_TO:
-        print("Skipping email send because GMAIL_TO is not configured.")
+        log.info("Skipping email send because GMAIL_TO is not configured")
         return
 
     credentials_path = _resolve_credentials_path()
-    if not credentials_path.exists():
-        print(f"Skipping email send because Gmail credentials were not found at {credentials_path}.")
+    has_env_google_auth = _has_env_google_auth()
+    if not credentials_path.exists() and not has_env_google_auth:
+        log.warning(
+            "Skipping email send because Gmail credentials were not found at %s and env-based Gmail auth is not configured",
+            credentials_path,
+        )
         return
 
     service = _gmail_service(interactive=interactive)
@@ -93,7 +134,7 @@ def _top_jobs(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _digest_url() -> str:
-    return os.getenv("DIGEST_URL", "").strip()
+    return VERCEL_URL or DIGEST_URL
 
 
 def _render_email_html(jobs: list[dict[str, Any]], digest_url: str) -> str:
@@ -165,7 +206,7 @@ def _render_email_html(jobs: list[dict[str, Any]], digest_url: str) -> str:
 def send_digest(jobs: list[dict[str, Any]], html_page_path: str) -> None:
     selected_jobs = _top_jobs(jobs)
     if not selected_jobs:
-        print("Skipping email send because there are no jobs to email.")
+        log.info("Skipping email send because there are no jobs to email")
         return
 
     digest_path = Path(html_page_path)
@@ -173,11 +214,12 @@ def send_digest(jobs: list[dict[str, Any]], html_page_path: str) -> None:
         digest_path = PROJECT_ROOT / digest_path
 
     if not digest_path.exists():
-        print(f"Digest HTML path does not exist yet: {digest_path}")
+        log.warning("Digest HTML path does not exist yet: %s", digest_path)
 
     html_body = _render_email_html(selected_jobs, _digest_url())
     subject = f"Job Digest — {datetime.now().date().isoformat()} — {len(selected_jobs)} matches"
     _send_html_message(subject, html_body, interactive=False)
+    log.info("Sent digest to %s", GMAIL_TO)
 
 
 def send_html_email(subject: str, html_body: str) -> None:

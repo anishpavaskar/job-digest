@@ -21,6 +21,12 @@ def test_html_contains_apply_links(sample_scored_jobs: list[dict]) -> None:
         assert f'href="{job["url"]}"' in html
 
 
+def test_html_contains_visible_job_urls(sample_scored_jobs: list[dict]) -> None:
+    html = renderer.render_html(sample_scored_jobs, "2026-01-01")
+    for job in sample_scored_jobs:
+        assert html.count(job["url"]) >= 2
+
+
 def test_html_file_is_saved_to_disk(sample_scored_jobs: list[dict]) -> None:
     html = renderer.render_html(sample_scored_jobs, "2026-01-01")
     assert renderer.OUTPUT_PATH.exists()

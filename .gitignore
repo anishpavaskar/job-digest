@@ -26,9 +26,11 @@ env/
 
 # Logs
 *.log
+logs/
 
 # Generated output
 output/
+*.db
 
 # Editor files
 .idea/

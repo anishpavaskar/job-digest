@@ -13,8 +13,10 @@ from urllib.parse import urljoin
 import httpx
 from bs4 import BeautifulSoup
 
+from logging_config import get_logger
+
 YC_JOBS_URL = "https://www.ycombinator.com/jobs"
-REQUEST_TIMEOUT = httpx.Timeout(20.0)
+REQUEST_TIMEOUT = httpx.Timeout(30.0)
 ENGINEERING_KEYWORDS = (
     "engineer",
     "engineering",
@@ -33,6 +35,7 @@ ENGINEERING_KEYWORDS = (
     "machine learning",
 )
 RELATIVE_TIME_PATTERN = re.compile(r"(?P<count>\d+)\+?\s*(?P<unit>minute|hour|day|week|month|year)s?", re.IGNORECASE)
+log = get_logger("yc")
 
 
 def _clean_text(value: Any) -> str:
@@ -179,6 +182,7 @@ def _extract_jobs_from_scripts(soup: BeautifulSoup) -> list[dict[str, Any]]:
         try:
             payload = json.loads(raw)
         except json.JSONDecodeError:
+            log.warning("Script JSON parse failed: %s", raw[:100].replace("\n", " "))
             continue
         jobs.extend(_walk_json(payload))
     return jobs
@@ -227,6 +231,7 @@ def _extract_embedded_job_postings(html: str) -> list[dict[str, Any]]:
     try:
         payload = json.loads(text[start:end])
     except json.JSONDecodeError:
+        log.warning("Embedded jobPostings JSON parse failed: %s", text[start : start + 100].replace("\n", " "))
         return []
 
     if isinstance(payload, list):
@@ -272,9 +277,13 @@ def _extract_jobs_from_html(soup: BeautifulSoup) -> list[dict[str, Any]]:
 
 
 async def fetch_yc_jobs() -> list[dict[str, Any]]:
-    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, follow_redirects=True) as client:
-        response = await client.get(YC_JOBS_URL)
-        response.raise_for_status()
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, follow_redirects=True) as client:
+            response = await client.get(YC_JOBS_URL)
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
+        log.warning("YC fetch failed: %s", exc)
+        return []
 
     soup = BeautifulSoup(response.text, "html.parser")
     embedded_jobs = [_extract_candidate_from_mapping(item) for item in _extract_embedded_job_postings(response.text)]
@@ -286,3 +295,7 @@ async def fetch_yc_jobs() -> list[dict[str, Any]]:
             continue
         unique_jobs[job["url"]] = job
     return list(unique_jobs.values())
+
+
+async def fetch_yc() -> list[dict[str, Any]]:
+    return await fetch_yc_jobs()

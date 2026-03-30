@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from emailer import authorize_gmail
+from logging_config import get_logger
+
+log = get_logger("setup_gmail_auth")
 
 
 def main() -> None:
     token_path = authorize_gmail()
-    print(f"Gmail token saved to {token_path}")
+    log.info("Gmail token saved to %s", token_path)
 
 
 if __name__ == "__main__":

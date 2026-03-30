@@ -19,9 +19,6 @@ TEMPLATE = Environment(autoescape=True).from_string(
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Job Digest</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet" />
     <style>
       :root {
         --bg: #000000;
@@ -37,7 +34,7 @@ TEMPLATE = Environment(autoescape=True).from_string(
         margin: 0;
         background: var(--bg);
         color: var(--fg);
-        font-family: "JetBrains Mono", monospace;
+        font-family: "JetBrains Mono", "SFMono-Regular", Consolas, Menlo, Monaco, monospace;
       }
 
       body {
@@ -82,9 +79,9 @@ TEMPLATE = Environment(autoescape=True).from_string(
         display: grid;
         grid-template-columns: 84px minmax(0, 1.9fr) minmax(0, 1fr) 120px;
         gap: 16px;
-        align-items: baseline;
-        min-height: 58px;
-        padding: 10px 0;
+        align-items: start;
+        min-height: 72px;
+        padding: 12px 0;
         border-bottom: 1px solid var(--border);
       }
 
@@ -102,9 +99,10 @@ TEMPLATE = Environment(autoescape=True).from_string(
 
       .role {
         min-width: 0;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+      }
+
+      .role-head {
+        line-height: 1.45;
       }
 
       .role-title {
@@ -113,6 +111,18 @@ TEMPLATE = Environment(autoescape=True).from_string(
 
       .role-company {
         opacity: 0.78;
+      }
+
+      .job-url {
+        display: block;
+        margin-top: 6px;
+        color: rgba(255, 255, 255, 0.72);
+        font-size: 0.78rem;
+        line-height: 1.5;
+        text-decoration: underline;
+        text-underline-offset: 0.18em;
+        overflow-wrap: anywhere;
+        user-select: all;
       }
 
       .location {
@@ -191,8 +201,11 @@ TEMPLATE = Environment(autoescape=True).from_string(
             <article class="row">
               <div class="score">{{ job.score }}</div>
               <div class="role">
-                <span class="role-title">{{ job.title }}</span>
-                <span class="role-company"> — {{ job.company or "Unknown Company" }}</span>
+                <div class="role-head">
+                  <span class="role-title">{{ job.title }}</span>
+                  <span class="role-company"> — {{ job.company or "Unknown Company" }}</span>
+                </div>
+                <a class="job-url" href="{{ job.url }}" target="_blank" rel="noreferrer">{{ job.url }}</a>
               </div>
               <div class="location">{{ job.location or "Location Unknown" }}</div>
               <a class="apply" href="{{ job.url }}" target="_blank" rel="noreferrer">[APPLY →]</a>

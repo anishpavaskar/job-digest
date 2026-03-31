@@ -69,7 +69,30 @@ def filter_new_jobs(jobs: list[Job]) -> list[Job]:
 
             existing = conn.execute("SELECT url FROM jobs WHERE url = ?", (url,)).fetchone()
             if existing:
-                conn.execute("UPDATE jobs SET last_seen = ? WHERE url = ?", (now, url))
+                conn.execute(
+                    """
+                    UPDATE jobs
+                    SET
+                        id = CASE WHEN COALESCE(id, '') = '' THEN ? ELSE id END,
+                        title = CASE WHEN COALESCE(title, '') = '' THEN ? ELSE title END,
+                        company = CASE WHEN COALESCE(company, '') = '' THEN ? ELSE company END,
+                        location = CASE WHEN COALESCE(location, '') = '' THEN ? ELSE location END,
+                        source = CASE WHEN COALESCE(source, '') = '' THEN ? ELSE source END,
+                        description = CASE WHEN COALESCE(description, '') = '' THEN ? ELSE description END,
+                        last_seen = ?
+                    WHERE url = ?
+                    """,
+                    (
+                        str(job.get("id", "") or ""),
+                        str(job.get("title", "") or ""),
+                        str(job.get("company", "") or ""),
+                        str(job.get("location", "") or ""),
+                        str(job.get("source", "") or ""),
+                        str(job.get("description", "") or "")[:500],
+                        now,
+                        url,
+                    ),
+                )
                 continue
 
             conn.execute(
@@ -105,6 +128,45 @@ def filter_new_jobs(jobs: list[Job]) -> list[Job]:
         conn.commit()
 
     return new_jobs
+
+
+def get_job(url: str) -> Job | None:
+    """Return a tracked job row by URL."""
+    init_db()
+    with _get_conn() as conn:
+        row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url,)).fetchone()
+    return dict(row) if row else None
+
+
+def ensure_job(url: str) -> None:
+    """Insert a minimal job row when a URL is referenced before it is fetched."""
+    clean_url = str(url or "").strip()
+    if not clean_url:
+        raise ValueError("Job URL is required")
+
+    init_db()
+    now = datetime.now().isoformat()
+    with _get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO jobs (
+                url,
+                id,
+                title,
+                company,
+                location,
+                source,
+                description,
+                status,
+                first_seen,
+                last_seen
+            )
+            VALUES (?, '', '', '', '', '', '', 'new', ?, ?)
+            ON CONFLICT(url) DO NOTHING
+            """,
+            (clean_url, now, now),
+        )
+        conn.commit()
 
 
 def update_scores(scored_jobs: list[Job]) -> None:

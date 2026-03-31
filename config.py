@@ -94,6 +94,7 @@ SCORING_WEIGHTS = {
 
 TOP_N_EMAIL = 8
 MIN_SCORE = 55
+MAX_JOB_AGE_DAYS = 7
 
 DB_PATH = os.path.expanduser(os.getenv("DB_PATH", "~/job-digest/tracker.db"))
 TZ = os.getenv("TZ", "America/Los_Angeles").strip()
@@ -104,3 +105,7 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 GMAIL_CREDENTIALS_PATH = os.getenv("GMAIL_CREDENTIALS_PATH", "credentials.json").strip()
 GMAIL_FROM = os.getenv("GMAIL_FROM", "").strip()
 GMAIL_TO = os.getenv("GMAIL_TO", "").strip()
+PHONE = os.getenv("PHONE", "").strip()
+RESUME_PATH = os.path.expanduser(
+    os.getenv("RESUME_PATH", "~/Anish_Personal_projects/Anish_Pavaskar_Resume_2026_v5.docx").strip()
+)

@@ -72,6 +72,35 @@ def test_update_status_tracks_applied_jobs(
     assert applied_jobs[0]["applied_at"]
 
 
+def test_ensure_job_creates_stub_row_that_can_be_marked_applied(tracker_db: Path) -> None:
+    url = "https://boards.greenhouse.io/example/jobs/12345"
+
+    tracker.ensure_job(url)
+    tracker.update_status(url, "applied", "from applied.txt")
+    job = tracker.get_job(url)
+
+    assert job is not None
+    assert job["url"] == url
+    assert job["status"] == "applied"
+    assert job["notes"] == "from applied.txt"
+
+
+def test_filter_new_jobs_backfills_empty_stub_fields(
+    sample_jobs: list[dict],
+    tracker_db: Path,
+) -> None:
+    tracker.ensure_job(sample_jobs[0]["url"])
+
+    new_jobs = tracker.filter_new_jobs([sample_jobs[0]])
+    job = tracker.get_job(sample_jobs[0]["url"])
+
+    assert new_jobs == []
+    assert job is not None
+    assert job["title"] == sample_jobs[0]["title"]
+    assert job["company"] == sample_jobs[0]["company"]
+    assert job["source"] == sample_jobs[0]["source"]
+
+
 def test_search_jobs_filters_by_query_and_status(
     sample_scored_jobs: list[dict],
     tracker_db: Path,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
 
-from config import GREENHOUSE_COMPANIES, MY_PROFILE
+from config import GREENHOUSE_COMPANIES, MAX_JOB_AGE_DAYS, MY_PROFILE
 from emailer import send_digest
 from export_data import export_and_push
 from fetchers.greenhouse import fetch_greenhouse_jobs
@@ -23,6 +23,7 @@ from fetchers.yc import fetch_yc
 from logging_config import get_logger
 from renderer import OUTPUT_PATH, render_html
 from scorer import score_jobs
+from sync_applied import sync_applied
 from tracker import filter_new_jobs, init_db, update_scores
 
 Job = dict[str, Any]
@@ -108,8 +109,62 @@ def _shortlist_jobs(jobs: list[Job]) -> list[Job]:
     return shortlisted or [job for job, _ in ranked[:MAX_SCORING_JOBS]]
 
 
+def _parse_posted_at(value: Any) -> datetime | None:
+    posted_clean = str(value or "").strip()
+    if not posted_clean:
+        return None
+
+    candidates = [
+        posted_clean,
+        posted_clean[:19],
+        posted_clean.replace("Z", "+00:00"),
+    ]
+    for candidate in candidates:
+        try:
+            parsed = datetime.fromisoformat(candidate)
+            if parsed.tzinfo is not None:
+                return parsed.astimezone().replace(tzinfo=None)
+            return parsed
+        except ValueError:
+            continue
+
+    for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(posted_clean[:19], fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def filter_fresh_jobs(jobs: list[Job], max_days: int = 7) -> list[Job]:
+    """Keep jobs with no date or a posted_at value within max_days."""
+    cutoff = datetime.now() - timedelta(days=max_days)
+    fresh_jobs: list[Job] = []
+    stale_count = 0
+
+    for job in jobs:
+        posted_at = _parse_posted_at(job.get("posted_at"))
+        if posted_at is None:
+            fresh_jobs.append(job)
+            continue
+
+        if posted_at >= cutoff:
+            fresh_jobs.append(job)
+            continue
+
+        stale_count += 1
+
+    if stale_count:
+        log.info("Filtered %s stale jobs older than %s days", stale_count, max_days)
+    return fresh_jobs
+
+
 async def run_pipeline() -> list[Job]:
     log.info("Starting job digest pipeline")
+    try:
+        sync_applied()
+    except Exception as exc:
+        log.error("applied.txt sync failed: %s", exc)
     init_db()
 
     results = await asyncio.gather(
@@ -147,6 +202,9 @@ async def run_pipeline() -> list[Job]:
     new_jobs = filter_new_jobs(deduped_jobs)
     seen_jobs = len(deduped_jobs) - len(new_jobs)
     log.info("New jobs (not seen before): %s", len(new_jobs))
+
+    new_jobs = filter_fresh_jobs(new_jobs, max_days=MAX_JOB_AGE_DAYS)
+    log.info("Fresh new jobs to score: %s", len(new_jobs))
 
     if not new_jobs:
         log.info("No new jobs today - skipping score + email")

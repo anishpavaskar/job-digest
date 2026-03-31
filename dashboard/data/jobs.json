@@ -1,9 +1,10 @@
 {
-  "generated_at": "2026-03-30T13:59:48.589517",
+  "generated_at": "2026-03-30T18:52:14.237493",
   "stats": {
     "total_seen": 3112,
     "by_status": {
-      "new": 3112
+      "new": 3111,
+      "applied": 1
     },
     "top_sources": {
       "greenhouse": 2679,
@@ -480,11 +481,11 @@
       "source": "greenhouse",
       "description": "About the role We are looking for a Software Engineer to help build our new financial platform that is highly reliable, scalable, and will serve as the backbone for Chime. This platform will power the most important financial activities that millions of Chime members undertake every day. You will ensure that we build the highest levels of trust with our members by making our platform lightning-fast, available, secure, resilient and auditable. This is an exciting opportunity to be an invaluable m",
       "score": 78,
-      "status": "new",
+      "status": "applied",
       "first_seen": "2026-03-30T03:01:06.236255",
       "last_seen": "2026-03-30T13:59:41.354041",
-      "applied_at": null,
-      "notes": ""
+      "applied_at": "2026-03-30T18:25:51.455326",
+      "notes": "auto-apply failed - check manually"
     },
     {
       "url": "https://databricks.com/company/careers/open-positions/job?gh_jid=8320183002",
